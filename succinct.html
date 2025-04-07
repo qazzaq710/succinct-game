@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Lightning Dodge</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        #gameCanvas {
+            border: 1px solid #fff;
+            background: #1a1a1a;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="400" height="600"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Load the new image
+        const playerImg = new Image();
+        playerImg.src = 'succinct.png'; // Убедитесь, что файл называется succinct.png и находится в той же папке
+
+        // Player parameters
+        let player = {
+            x: canvas.width / 2 - 26.5, // Центрируем (половина новой ширины: 53 / 2 = 26.5)
+            y: canvas.height - 53,    // Устанавливаем нижний край (новая высота 53)
+            displayWidth: 53,        // Уменьшили с 80 до 53 (80 / 1.5)
+            displayHeight: 53,       // Уменьшили с 80 до 53 (80 / 1.5)
+            speed: 5,
+            // Use a single collision box, adjusted for the new size
+            collisionBoxes: [
+                { offsetX: 16, offsetY: 6, width: 20, height: 40 } // Уменьшили пропорционально
+            ]
+        };
+
+        // Obstacles (fireflies)
+        let obstacles = [];
+        let baseObstacleSpeed = 5; // Начальная скорость
+        let obstacleSpeed = baseObstacleSpeed;
+        let speedIncreaseRate = 0.4; // Увеличенный прирост скорости на уровнях
+        let spawnRate = 20; // Увеличенная частота появления огоньков
+        let frameCount = 0;
+
+        // Score and difficulty
+        let score = 0;
+        let level = 1;
+        let nextLevelScore = 10; // Score needed to reach next level
+
+        // Controls
+        let leftPressed = false;
+        let rightPressed = false;
+
+        // Handle keyboard input
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowLeft') leftPressed = true;
+            if (e.key === 'ArrowRight') rightPressed = true;
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (e.key === 'ArrowLeft') leftPressed = false;
+            if (e.key === 'ArrowRight') rightPressed = false;
+        });
+
+        // Main game loop
+        function gameLoop() {
+            // Clear the canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Move the player
+            if (leftPressed && player.x > 0) {
+                player.x -= player.speed;
+            }
+            if (rightPressed && player.x < canvas.width - player.displayWidth) {
+                player.x += player.speed;
+            }
+
+            // Draw the player
+            ctx.drawImage(playerImg, player.x, player.y, player.displayWidth, player.displayHeight);
+
+            // Spawn obstacles (fireflies)
+            frameCount++;
+            if (frameCount % spawnRate === 0) {
+                spawnObstacle();
+            }
+
+            // Move and draw obstacles (fireflies)
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                let obs = obstacles[i];
+                obs.y += obstacleSpeed;
+
+                // Draw fireflies with a glowing effect (in pink)
+                const radius = obs.width / 2;
+                const gradient = ctx.createRadialGradient(
+                    obs.x + radius, obs.y + radius, 0, // Центр градиента
+                    obs.x + radius, obs.y + radius, radius // Радиус градиента
+                );
+                gradient.addColorStop(0, '#FF69B4'); // Яркий розовый центр
+                gradient.addColorStop(1, 'rgba(255, 193, 204, 0)'); // Светлый розовый край (прозрачный)
+
+                ctx.beginPath();
+                ctx.arc(obs.x + radius, obs.y + radius, radius, 0, Math.PI * 2);
+                ctx.fillStyle = gradient;
+                ctx.fill();
+                ctx.closePath();
+
+                // Check for collision with any of the collision boxes
+                let collisionDetected = false;
+                for (let box of player.collisionBoxes) {
+                    if (checkCollision(
+                        { x: player.x + box.offsetX, y: player.y + box.offsetY, width: box.width, height: box.height },
+                        obs
+                    )) {
+                        collisionDetected = true;
+                        console.log("Collision detected with box:", box, "Obstacle position:", obs);
+                        break;
+                    }
+                }
+
+                if (collisionDetected) {
+                    alert(`Game Over! Your score: ${score}`);
+                    obstacles = [];
+                    score = 0;
+                    level = 1;
+                    obstacleSpeed = baseObstacleSpeed;
+                    nextLevelScore = 10;
+                    player.x = canvas.width / 2 - 26.5; // Обновляем сброс позиции (с учётом нового размера)
+                    frameCount = 0;
+                    continue;
+                }
+
+                // Remove obstacles that go off-screen
+                if (obs.y > canvas.height) {
+                    obstacles.splice(i, 1);
+                    score++;
+                }
+            }
+
+            // Increase difficulty
+            if (score >= nextLevelScore) {
+                level++;
+                obstacleSpeed += speedIncreaseRate; // Увеличиваем скорость с каждым уровнем
+                nextLevelScore += 10; // Увеличиваем порог для следующего уровня
+            }
+
+            // Draw the title "Succinct" with the new icon to the left
+            const titleX = canvas.width / 2; // Центр канваса по X
+            const titleY = 30; // Позиция по Y (вверху канваса)
+            const textSize = 40; // Размер шрифта текста
+            const logoHeight = textSize * 1.5; // Размер логотипа
+            const logoWidth = logoHeight; // Пропорциональная ширина (квадратное изображение)
+
+            // Calculate the width of the text "Succinct" to adjust the logo position
+            ctx.font = `bold ${textSize}px Arial`;
+            const textMetrics = ctx.measureText('Succinct');
+            const textWidth = textMetrics.width;
+
+            // Draw the new icon to the left of the title with adjusted spacing
+            const logoX = titleX - textWidth / 2 - logoWidth - 5;
+            ctx.drawImage(playerImg, logoX, titleY - logoHeight / 2, logoWidth, logoHeight);
+
+            // Draw the title "Succinct" in pink
+            ctx.fillStyle = '#FF69B4'; // Розовый цвет
+            ctx.font = `bold ${textSize}px Arial`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('Succinct', titleX, titleY);
+
+            // Draw a separator line below the title
+            const lineY = titleY + textSize / 2 + 10; // Линия на 10 пикселей ниже текста
+            ctx.beginPath();
+            ctx.moveTo(20, lineY); // Начало линии (с отступом слева)
+            ctx.lineTo(canvas.width - 20, lineY); // Конец линии (с отступом справа)
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)'; // Белая линия с прозрачностью 65% (0.35)
+            ctx.lineWidth = 1; // Толщина линии
+            ctx.stroke(); // Сплошная линия
+            ctx.closePath();
+
+            // Draw score and level
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+            ctx.font = '12px Arial';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'top';
+            ctx.fillText(`Score: ${score}`, 10, lineY + 20);
+            ctx.fillText(`Level: ${level}`, 10, lineY + 50);
+
+            // Continue the loop
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Spawn obstacles (fireflies) below the separator line
+        function spawnObstacle() {
+            const lineY = 30 + 40 / 2 + 10; // Позиция разделительной линии
+            obstacles.push({
+                x: Math.random() * (canvas.width - 20),
+                y: lineY - 20, // Огоньки появляются сразу ниже линии
+                width: 20,
+                height: 20
+            });
+        }
+
+        // Check for collisions
+        function checkCollision(rect1, rect2) {
+            return rect1.x < rect2.x + rect2.width &&
+                   rect1.x + rect1.width > rect2.x &&
+                   rect1.y < rect2.y + rect2.height &&
+                   rect1.y + rect1.height > rect2.y;
+        }
+
+        // Start the game after the image loads
+        playerImg.onload = () => {
+            console.log("Succinct image loaded successfully!");
+            gameLoop();
+        };
+
+        playerImg.onerror = () => {
+            console.error("Failed to load succinct image!");
+            ctx.fillStyle = 'white';
+            ctx.font = '20px Arial';
+            ctx.fillText('Failed to load image!', 50, 50);
+        };
+    </script>
+</body>
+</html>
